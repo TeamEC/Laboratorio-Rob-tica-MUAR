@@ -1,0 +1,141 @@
+<!-- launch -->
+<launch>
+
+  <arg name="use_sim_time" default="true" />
+  <arg name="gui" default="true" />
+  <arg name="headless" default="false" />
+  <arg name="world_name" default="$(find lab_rob)/src/final_test.world" />
+
+  <!-- Short-term hack to support the original front_laser:=true argument for spawning
+       the simulator. This will be removed in favour of using the config:=x arg instead. -->
+  <arg name="front_laser" default="false" />
+  <arg name="default_config" value="front_laser" if="$(arg front_laser)" />
+  <arg name="default_config" value="base" unless="$(arg front_laser)" /> 
+  <!-- end of hack -->
+
+  <!-- Configuration of Jackal which you would like to simulate.
+       See jackal_description for details. -->
+  <arg name="config" default="$(arg default_config)" />
+
+  <!-- Launch Gazebo with the specified world -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="debug" value="0" />
+    <arg name="gui" value="$(arg gui)" />
+    <arg name="use_sim_time" value="$(arg use_sim_time)" />
+    <arg name="headless" value="$(arg headless)" />
+    <arg name="world_name" value="$(arg world_name)" />
+  </include>
+
+  <!-- Load Jackal's description, controllers, and teleop nodes. -->
+  <include file="$(find jackal_description)/launch/description.launch">
+    <arg name="config" value="$(arg config)" />
+  </include>
+  <include file="$(find jackal_control)/launch/control.launch" /> 
+<!--  <include file="$(find jackal_control)/launch/teleop.launch"> 
+    <arg name="joystick" value="false"/> 
+  </include> -->
+
+  <!-- Spawn Jackal -->
+  <node name="urdf_spawner" pkg="gazebo_ros" type="spawn_model"
+	      args="-urdf -model jackal -param robot_description -x 8.0 -y -8.0 -z 1.0" />
+
+<node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
+
+  <rosparam file="$(find jackal_navigation)/params/costmap_common_params.yaml" command="load" ns="global_costmap" />
+  <rosparam file="$(find jackal_navigation)/params/costmap_common_params.yaml" command="load" ns="local_costmap" />
+
+  <rosparam file="$(find jackal_navigation)/params/odom_nav_params/global_costmap_params.yaml" command="load" />
+  <rosparam file="$(find jackal_navigation)/params/odom_nav_params/local_costmap_params.yaml" command="load" />
+
+  <rosparam file="$(find jackal_navigation)/params/base_local_planner_params.yaml" command="load" />
+  <rosparam file="$(find jackal_navigation)/params/move_base_params.yaml" command="load" />
+
+  <param name="base_global_planner" type="string" value="navfn/NavfnROS" />
+  <param name="base_local_planner" value="base_local_planner/TrajectoryPlannerROS"/>
+
+  <remap from="odom" to="odometry/filtered" />
+ </node>
+
+
+<!--<include file="$(find jackal_navigation)/launch/include/gmapping.launch" /> -->
+
+<node pkg="tf" type="static_transform_publisher" name="link1_broadcaster" args="0 0 0 0 0 0 1 front_laser_mount front_laser 100" />
+<node pkg="tf" type="static_transform_publisher" name="link2_broadcaster" args="0 0 0 0 0 0 1 front_mount front_laser_mount 100" /> 
+
+
+  <!--CONVERSION DE IMAGEN-->
+
+ <!-- Nodelet manager for this pipeline --> 
+  <node pkg="nodelet" type="nodelet" args="manager"
+name="record_player_manager" output="screen"/> 
+
+<node pkg="nodelet" type="nodelet" name="metric_rect" 
+        args="load depth_image_proc/convert_metric record_player_manager --no-bond">
+    <remap from="image_raw" to="camera/depth/image_raw"/>
+    <remap from="image" to="camera/depth/image"/>
+</node> 
+
+
+
+<node name="pose_real" pkg="lab_rob" type="pose_real" output="screen">
+	<param name="p_x_o" type="double" value="8.0" />
+	<param name="p_y_o" type="double" value="-8.0" />
+</node>
+
+<node name="nucleo" pkg="lab_rob" type="nucleo" output="screen"> 
+	<param name="p_x_o" type="double" value="8.0" />
+	<param name="p_y_o" type="double" value="-8.0" />
+</node>
+
+<node name="navegacion" pkg="lab_rob" type="navegacion" output="screen"> 
+	<param name="p_xaruco" type="double" value="-5.0" />
+	<param name="p_yaruco" type="double" value="-5.0" />
+</node>
+
+ <node name="camara_profundidad" pkg="lab_rob" type="camara_profundidad" output="screen"/> 
+
+<node name="detect_aruco" pkg="lab_rob" type="detect_aruco" output="screen"/> 
+<node name="color_detect_complex" pkg="lab_rob" type="color_detect_complex.py" output="screen"/>
+<node name="print_roi_node" pkg="find_object_2d" type="print_roi_node" output="screen"/>
+<node name="pose_obj_node" pkg="find_object_2d" type="pose_obj_node" output="screen"/>
+
+<!-- IDENTIFICADOR ARUCO 
+<node pkg="ros_plugins" name="ros_plugins" type="ros_plugins" output="screen">
+        		<param name="ArucoId" value="6" />
+			<param name="ModelDirectory" value="/home/raulparedesloor/catkin_ws/src/labrob_gazebo/models/" />
+</node> -->
+
+<!-- ################ -->
+    <arg name="markerSize"      default="0.05"/>    <!-- in m -->
+    <arg name="side"             default="left"/>
+    <arg name="ref_frame"       default="base"/>  <!-- leave empty and the pose will be published wrt param parent_name -->
+
+
+<node pkg="aruco_ros" type="marker_publisher" name="aruco_marker_publisher">
+     <remap from="/camera_info" to="/camera/rgb/camera_info" />
+     <remap from="/image" to="/camera/rgb/image_raw" />
+     <param name="image_is_rectified" value="True"/>
+     <param name="marker_size"        value="$(arg markerSize)"/>
+     <param name="reference_frame"    value="$(arg ref_frame)"/>   <!-- frame in which the marker pose will be refered -->
+     <param name="camera_frame"       value="$(arg side)_hand_camera"/>
+</node>
+
+<!-- LAUNCH DE LA DETECCION DE IMAGENES  -->
+
+	<node name="find_object_3d" pkg="find_object_2d" type="find_object_2d" output="screen">
+		<param name="gui" value="false" type="bool"/>
+		<param name="settings_path" value="~/.ros/find_object_2d.ini" type="str"/>
+		<param name="subscribe_depth" value="true" type="bool"/>
+		<param name="objects_path" value="" type="str"/>
+		<param name="object_prefix" value="object" type="str"/>
+		<param name="session_path" value="$(find lab_rob)/src/test_key.bin"/>
+		
+		<remap from="rgb/image_rect_color" to="camera/rgb/image_raw"/>
+		<remap from="depth_registered/image_raw" to="camera/depth/image"/>
+		<remap from="depth_registered/camera_info" to="camera/depth/camera_info"/>
+	</node>  
+
+
+
+
+</launch>
